@@ -1,0 +1,1232 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fact-ARC | 自回归纠错对话系统</title>
+    <!-- Marked.js for Markdown rendering -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --bg-primary: #111111;
+            --bg-secondary: #1a1a1a;
+            --bg-tertiary: #222222;
+            --bg-hover: #2a2a2a;
+            --border-color: #333333;
+            --text-primary: #ececec;
+            --text-secondary: #9a9a9a;
+            --text-tertiary: #666666;
+            --accent: #ffffff;
+            --accent-hover: #e0e0e0;
+            --success: #4ade80;
+            --warning: #fbbf24;
+            --error: #f87171;
+            --code-bg: #1e1e1e;
+            --shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+            --radius: 12px;
+            --radius-sm: 8px;
+            --transition: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', Roboto, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            height: 100vh;
+            display: flex;
+            overflow: hidden;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            width: 260px;
+            min-width: 260px;
+            background: var(--bg-secondary);
+            border-right: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            transition: transform var(--transition);
+            z-index: 10;
+        }
+
+        .sidebar-header {
+            padding: 20px 16px 12px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .sidebar-logo {
+            font-size: 18px;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+            margin-bottom: 4px;
+        }
+
+        .sidebar-subtitle {
+            font-size: 11px;
+            color: var(--text-tertiary);
+            margin-bottom: 16px;
+        }
+
+        .new-chat-btn {
+            width: 100%;
+            padding: 10px 14px;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-sm);
+            color: var(--text-primary);
+            font-size: 13px;
+            cursor: pointer;
+            transition: all var(--transition);
+            text-align: left;
+        }
+
+        .new-chat-btn:hover {
+            background: var(--bg-hover);
+            border-color: #444;
+        }
+
+        .chat-history {
+            flex: 1;
+            overflow-y: auto;
+            padding: 8px;
+            scrollbar-width: thin;
+            scrollbar-color: var(--border-color) transparent;
+        }
+
+        .chat-history::-webkit-scrollbar { width: 4px; }
+        .chat-history::-webkit-scrollbar-track { background: transparent; }
+        .chat-history::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 2px; }
+
+        .history-item {
+            padding: 10px 12px;
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            font-size: 13px;
+            color: var(--text-secondary);
+            transition: all var(--transition);
+            margin-bottom: 2px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .history-item:hover {
+            background: var(--bg-hover);
+            color: var(--text-primary);
+        }
+
+        .history-item.active {
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+        }
+
+        .sidebar-footer {
+            padding: 12px 16px;
+            border-top: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            color: var(--text-tertiary);
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--success);
+            animation: pulse 2s infinite;
+            flex-shrink: 0;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        /* Main */
+        .main {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+        }
+
+        .chat-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px 0;
+            scroll-behavior: smooth;
+            scrollbar-width: thin;
+            scrollbar-color: var(--border-color) transparent;
+        }
+
+        .chat-container::-webkit-scrollbar { width: 6px; }
+        .chat-container::-webkit-scrollbar-track { background: transparent; }
+        .chat-container::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 3px; }
+
+        .messages-wrapper {
+            max-width: 768px;
+            margin: 0 auto;
+            padding: 0 24px;
+        }
+
+        /* Welcome */
+        .welcome-screen {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            text-align: center;
+            padding: 40px;
+        }
+
+        .welcome-title {
+            font-size: 28px;
+            font-weight: 700;
+            margin-bottom: 12px;
+            letter-spacing: -0.5px;
+        }
+
+        .welcome-desc {
+            color: var(--text-secondary);
+            font-size: 14px;
+            max-width: 480px;
+            line-height: 1.7;
+            margin-bottom: 40px;
+        }
+
+        .welcome-features {
+            display: flex;
+            gap: 16px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        .feature-card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius);
+            padding: 18px 20px;
+            width: 200px;
+            text-align: left;
+            cursor: pointer;
+            transition: all var(--transition);
+        }
+
+        .feature-card:hover {
+            border-color: #555;
+            background: var(--bg-tertiary);
+        }
+
+        .feature-card .fc-title {
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 6px;
+        }
+
+        .feature-card .fc-desc {
+            font-size: 12px;
+            color: var(--text-tertiary);
+            line-height: 1.5;
+        }
+
+        /* Messages */
+        .message {
+            padding: 20px 0;
+            animation: fadeIn 0.3s ease;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .message:last-child {
+            border-bottom: none;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .message-author {
+            font-size: 13px;
+            font-weight: 700;
+            margin-bottom: 10px;
+            cursor: default;
+            display: inline-block;
+        }
+
+        .message.user .message-author {
+            color: var(--text-secondary);
+        }
+
+        .message.assistant .message-author {
+            color: var(--text-primary);
+        }
+
+        .message-author.editable {
+            cursor: pointer;
+            padding: 2px 6px;
+            border-radius: 4px;
+            transition: background var(--transition);
+        }
+
+        .message-author.editable:hover {
+            background: var(--bg-hover);
+        }
+
+        .message-author input {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            color: var(--text-primary);
+            font-size: 13px;
+            font-weight: 700;
+            padding: 2px 6px;
+            outline: none;
+            width: 120px;
+            font-family: inherit;
+        }
+
+        /* Markdown Content */
+        .message-content {
+            line-height: 1.7;
+            font-size: 14px;
+            color: var(--text-primary);
+        }
+
+        .message-content h1,
+        .message-content h2,
+        .message-content h3,
+        .message-content h4,
+        .message-content h5,
+        .message-content h6 {
+            margin: 16px 0 8px 0;
+            font-weight: 600;
+            line-height: 1.3;
+        }
+
+        .message-content h1 { font-size: 1.5em; }
+        .message-content h2 { font-size: 1.3em; }
+        .message-content h3 { font-size: 1.15em; }
+        .message-content h4 { font-size: 1em; }
+
+        .message-content p {
+            margin-bottom: 12px;
+        }
+
+        .message-content p:last-child {
+            margin-bottom: 0;
+        }
+
+        .message-content ul,
+        .message-content ol {
+            margin: 8px 0;
+            padding-left: 24px;
+        }
+
+        .message-content li {
+            margin-bottom: 4px;
+        }
+
+        .message-content a {
+            color: #9a9a9a;
+            text-decoration: underline;
+            transition: color var(--transition);
+        }
+
+        .message-content a:hover {
+            color: var(--text-primary);
+        }
+
+        .message-content blockquote {
+            border-left: 3px solid var(--border-color);
+            padding-left: 14px;
+            margin: 12px 0;
+            color: var(--text-secondary);
+        }
+
+        .message-content code {
+            background: var(--code-bg);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 13px;
+            font-family: 'SF Mono', 'Fira Code', 'Fira Mono', Menlo, Consolas, monospace;
+        }
+
+        .message-content pre {
+            background: var(--code-bg);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-sm);
+            padding: 14px 16px;
+            overflow-x: auto;
+            margin: 12px 0;
+        }
+
+        .message-content pre code {
+            background: none;
+            padding: 0;
+            font-size: 12px;
+            line-height: 1.5;
+        }
+
+        .message-content table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 12px 0;
+            font-size: 13px;
+        }
+
+        .message-content th,
+        .message-content td {
+            border: 1px solid var(--border-color);
+            padding: 8px 12px;
+            text-align: left;
+        }
+
+        .message-content th {
+            background: var(--bg-tertiary);
+            font-weight: 600;
+        }
+
+        .message-content hr {
+            border: none;
+            border-top: 1px solid var(--border-color);
+            margin: 16px 0;
+        }
+
+        .message-content strong {
+            font-weight: 600;
+        }
+
+        .message-content em {
+            font-style: italic;
+        }
+
+        .message-content img {
+            max-width: 100%;
+            border-radius: var(--radius-sm);
+            margin: 8px 0;
+        }
+
+        /* Verification Trail */
+        .verification-trail {
+            margin-top: 16px;
+            border-top: 1px solid var(--border-color);
+            padding-top: 14px;
+        }
+
+        .trail-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 10px;
+            cursor: pointer;
+            user-select: none;
+            font-size: 12px;
+            color: var(--text-tertiary);
+            transition: color var(--transition);
+        }
+
+        .trail-header:hover { color: var(--text-secondary); }
+
+        .trail-arrow {
+            display: inline-block;
+            transition: transform var(--transition);
+            font-size: 10px;
+        }
+
+        .trail-header.expanded .trail-arrow {
+            transform: rotate(90deg);
+        }
+
+        .trail-details { display: none; font-size: 12px; }
+        .trail-details.show { display: block; }
+
+        .trail-round {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-sm);
+            padding: 12px;
+            margin-bottom: 8px;
+        }
+
+        .trail-round-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 8px;
+            font-weight: 500;
+        }
+
+        .trail-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 11px;
+            font-weight: 500;
+        }
+
+        .trail-badge.pass { background: rgba(74, 222, 128, 0.15); color: var(--success); }
+        .trail-badge.fail { background: rgba(248, 113, 113, 0.15); color: var(--error); }
+
+        .trail-confidence { font-size: 11px; color: var(--text-tertiary); }
+        .trail-reason { color: var(--text-secondary); margin-top: 6px; line-height: 1.5; }
+        .trail-facts { margin-top: 8px; }
+
+        .fact-item {
+            background: var(--bg-secondary);
+            border-radius: 6px;
+            padding: 8px 10px;
+            margin-bottom: 6px;
+            font-size: 11px;
+        }
+
+        .fact-title { font-weight: 500; margin-bottom: 2px; }
+        .fact-snippet { color: var(--text-tertiary); line-height: 1.4; margin-bottom: 4px; }
+        .fact-url { color: var(--text-tertiary); text-decoration: none; font-size: 10px; word-break: break-all; }
+        .fact-url:hover { color: var(--text-secondary); }
+
+        /* Input */
+        .input-area { padding: 16px 0 20px; }
+
+        .input-wrapper {
+            max-width: 768px;
+            margin: 0 auto;
+            padding: 0 24px;
+        }
+
+        .input-container {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius);
+            padding: 8px 12px;
+            display: flex;
+            align-items: flex-end;
+            gap: 10px;
+            transition: border-color var(--transition);
+            box-shadow: var(--shadow);
+        }
+
+        .input-container:focus-within { border-color: #555; }
+
+        .input-container textarea {
+            flex: 1;
+            background: transparent;
+            border: none;
+            outline: none;
+            color: var(--text-primary);
+            font-size: 14px;
+            font-family: inherit;
+            resize: none;
+            max-height: 200px;
+            line-height: 1.6;
+            padding: 6px 0;
+        }
+
+        .input-container textarea::placeholder { color: var(--text-tertiary); }
+
+        .btn-send {
+            width: 36px;
+            height: 36px;
+            border-radius: 8px;
+            background: var(--text-primary);
+            border: none;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all var(--transition);
+            flex-shrink: 0;
+            font-size: 16px;
+            color: var(--bg-primary);
+            font-weight: 700;
+        }
+
+        .btn-send:hover { background: var(--accent-hover); }
+        .btn-send:disabled { background: var(--bg-hover); cursor: not-allowed; color: var(--text-tertiary); }
+
+        .input-options {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            margin-top: 10px;
+            font-size: 12px;
+            color: var(--text-tertiary);
+        }
+
+        .max-loops-selector select {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            color: var(--text-secondary);
+            padding: 2px 6px;
+            font-size: 12px;
+            outline: none;
+            cursor: pointer;
+            margin-left: 4px;
+        }
+
+        /* Typing */
+        .typing-indicator {
+            display: inline-flex;
+            gap: 4px;
+            padding: 4px 0;
+        }
+
+        .typing-indicator span {
+            width: 6px;
+            height: 6px;
+            background: var(--text-tertiary);
+            border-radius: 50%;
+            animation: typing 1.4s infinite;
+        }
+
+        .typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
+        .typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
+
+        @keyframes typing {
+            0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+            30% { transform: translateY(-4px); opacity: 1; }
+        }
+
+        /* Toast */
+        .toast {
+            position: fixed;
+            bottom: 24px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-sm);
+            padding: 10px 20px;
+            font-size: 13px;
+            z-index: 100;
+            animation: slideUp 0.3s ease;
+            box-shadow: var(--shadow);
+        }
+
+        @keyframes slideUp {
+            from { transform: translateX(-50%) translateY(20px); opacity: 0; }
+            to { transform: translateX(-50%) translateY(0); opacity: 1; }
+        }
+
+        .toast.error { border-color: rgba(248, 113, 113, 0.4); }
+
+        /* Mobile */
+        @media (max-width: 768px) {
+            .sidebar {
+                position: fixed;
+                left: -260px;
+                height: 100vh;
+            }
+            .sidebar.open { transform: translateX(260px); }
+            .messages-wrapper, .input-wrapper { padding: 0 16px; }
+            .welcome-features { flex-direction: column; align-items: center; }
+            .feature-card { width: 100%; max-width: 280px; }
+            .mobile-menu-btn { display: flex !important; }
+        }
+
+        .mobile-menu-btn {
+            display: none;
+            position: fixed;
+            top: 12px;
+            left: 12px;
+            z-index: 20;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            width: 36px;
+            height: 36px;
+            cursor: pointer;
+            color: var(--text-primary);
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+        }
+    </style>
+</head>
+<body>
+    <button class="mobile-menu-btn" onclick="toggleSidebar()" aria-label="菜单">☰</button>
+
+    <!-- Sidebar -->
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <div class="sidebar-logo">Fact-ARC</div>
+            <div class="sidebar-subtitle">自回归纠错对话系统</div>
+            <button class="new-chat-btn" onclick="newChat()">+ 新对话</button>
+        </div>
+        <div class="chat-history" id="chatHistory"></div>
+        <div class="sidebar-footer">
+            <span class="status-dot"></span>
+            <span id="apiStatus">API 已连接</span>
+        </div>
+    </aside>
+
+    <!-- Main -->
+    <main class="main">
+        <div class="chat-container" id="chatContainer">
+            <div class="messages-wrapper" id="messagesWrapper">
+                <div class="welcome-screen" id="welcomeScreen">
+                    <div class="welcome-title">Fact-ARC</div>
+                    <div class="welcome-desc">
+                        基于"生成-检索-比对-纠错"闭环架构的智能对话系统。
+                        每个回答都经过外部事实检索和独立模型验证，确保准确性。
+                    </div>
+                    <div class="welcome-features">
+                        <div class="feature-card" onclick="sendPreset('2024年诺贝尔物理学奖得主是谁？')">
+                            <div class="fc-title">事实核查</div>
+                            <div class="fc-desc">验证最新学术界动态和科学事实</div>
+                        </div>
+                        <div class="feature-card" onclick="sendPreset('特斯拉Model Y 2024款有什么新功能？')">
+                            <div class="fc-title">产品信息</div>
+                            <div class="fc-desc">检索并验证最新产品规格和功能</div>
+                        </div>
+                        <div class="feature-card" onclick="sendPreset('最近有哪些重要的国际新闻？')">
+                            <div class="fc-title">时事新闻</div>
+                            <div class="fc-desc">获取经过验证的实时新闻摘要</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Input -->
+        <div class="input-area">
+            <div class="input-wrapper">
+                <div class="input-container">
+                    <textarea 
+                        id="userInput" 
+                        rows="1" 
+                        placeholder="输入你的问题，Fact-ARC 将为你验证..." 
+                        onkeydown="handleKeyDown(event)"
+                        oninput="autoResize(this)"
+                    ></textarea>
+                    <button class="btn-send" id="sendBtn" onclick="sendMessage()" disabled title="发送">↑</button>
+                </div>
+                <div class="input-options">
+                    <span>最大纠错轮次</span>
+                    <div class="max-loops-selector">
+                        <select id="maxLoops">
+                            <option value="1">1</option>
+                            <option value="2">2</option>
+                            <option value="3" selected>3</option>
+                            <option value="4">4</option>
+                            <option value="5">5</option>
+                        </select>
+                    </div>
+                    <span style="margin-left: auto;">Ctrl+K 聚焦 · Ctrl+N 新对话</span>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <div id="toastContainer"></div>
+
+    <script>
+        // ============================================
+        // Configuration
+        // ============================================
+        const API_BASE_URL = 'http://localhost:1010';
+        let currentChatId = generateId();
+        let chatHistory = {};
+        let isProcessing = false;
+        let userName = 'User';
+        let assistantName = 'Fact-ARC';
+
+        // 配置 Marked.js
+        if (typeof marked !== 'undefined') {
+            marked.setOptions({
+                breaks: true,        // 支持 GFM 换行
+                gfm: true,           // 启用 GitHub Flavored Markdown
+                headerIds: false,    // 不生成 header id
+                mangle: false,       // 不混淆邮箱地址
+                sanitize: false,     // 不清理 HTML（我们手动做）
+            });
+        }
+
+        // 从 localStorage 加载用户名
+        const savedUserName = localStorage.getItem('factarc_user_name');
+        if (savedUserName) userName = savedUserName;
+        const savedAssistantName = localStorage.getItem('factarc_assistant_name');
+        if (savedAssistantName) assistantName = savedAssistantName;
+
+        document.addEventListener('DOMContentLoaded', () => {
+            checkAPIHealth();
+            loadChatHistory();
+        });
+
+        async function checkAPIHealth() {
+            const statusEl = document.getElementById('apiStatus');
+            const statusDot = document.querySelector('.status-dot');
+            try {
+                const response = await fetch(`${API_BASE_URL}/health`);
+                if (response.ok) {
+                    statusEl.textContent = 'API 已连接';
+                    statusDot.style.background = 'var(--success)';
+                } else {
+                    throw new Error('Health check failed');
+                }
+            } catch (e) {
+                statusEl.textContent = 'API 未连接';
+                statusDot.style.background = 'var(--error)';
+            }
+        }
+
+        async function sendMessage(queryText = null) {
+            if (isProcessing) return;
+            const inputEl = document.getElementById('userInput');
+            const text = queryText || inputEl.value.trim();
+            if (!text) return;
+            if (!queryText) inputEl.value = '';
+
+            const welcomeScreen = document.getElementById('welcomeScreen');
+            if (welcomeScreen) welcomeScreen.remove();
+
+            addMessage('user', text);
+            const typingId = showTypingIndicator();
+            setProcessingState(true);
+
+            const maxLoops = parseInt(document.getElementById('maxLoops').value);
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/v1/chat/completions`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ query: text, max_loops: maxLoops })
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({}));
+                    throw new Error(errorData.detail || `HTTP ${response.status}`);
+                }
+
+                const data = await response.json();
+                removeTypingIndicator(typingId);
+                addMessage('assistant', data.final_answer, data);
+                updateChatHistory(text);
+            } catch (error) {
+                removeTypingIndicator(typingId);
+                addMessage('assistant', `❌ **错误**：${error.message}\n\n请检查 API 是否已启动。`);
+                showToast(`请求失败: ${error.message}`, 'error');
+            } finally {
+                setProcessingState(false);
+            }
+        }
+
+        function sendPreset(text) {
+            document.getElementById('userInput').value = text;
+            sendMessage(text);
+        }
+
+        function addMessage(role, content, apiData = null) {
+            const wrapper = document.getElementById('messagesWrapper');
+            const div = document.createElement('div');
+            div.className = `message ${role}`;
+
+            const authorName = role === 'user' ? userName : assistantName;
+
+            const renderedContent = renderMarkdown(content);
+
+            div.innerHTML = `
+                <div class="message-author editable" 
+                     onclick="editAuthorName(this, '${role}')" 
+                     title="点击修改名称">
+                    ${escapeHtml(authorName)}
+                </div>
+                <div class="message-content">${renderedContent}</div>
+                ${(role === 'assistant' && apiData && apiData.verification_trail && apiData.verification_trail.length > 0) ? renderVerificationTrail(apiData) : ''}
+            `;
+
+            wrapper.appendChild(div);
+            scrollToBottom();
+
+            if (!chatHistory[currentChatId]) {
+                chatHistory[currentChatId] = { title: '', messages: [] };
+            }
+            chatHistory[currentChatId].messages.push({ role, content, apiData, timestamp: Date.now() });
+
+            if (role === 'user' && !chatHistory[currentChatId].title) {
+                chatHistory[currentChatId].title = content.substring(0, 40) + (content.length > 40 ? '...' : '');
+                renderChatHistory();
+            }
+            saveChatHistory();
+        }
+
+        function renderMarkdown(text) {
+            if (!text) return '';
+
+            // 先做基本的 HTML 转义（防止 XSS）
+            // Marked 默认不会转义 HTML，所以我们先转义再渲染
+            const escaped = escapeHtml(text);
+
+            // 如果 Marked 已加载，用 Marked 渲染
+            if (typeof marked !== 'undefined' && marked.parse) {
+                try {
+                    const html = marked.parse(escaped);
+                    return html;
+                } catch (e) {
+                    console.warn('Markdown 渲染失败，回退到纯文本:', e);
+                    return escaped.replace(/\n/g, '<br>');
+                }
+            }
+
+            // 回退到简单渲染
+            return simpleMarkdownRender(escaped);
+        }
+
+        function simpleMarkdownRender(text) {
+            // 简单的 Markdown 回退方案
+            let html = text;
+
+            // 代码块 ```
+            html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) => {
+                return `<pre><code>${code.trim()}</code></pre>`;
+            });
+
+            // 行内代码 `code`
+            html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+
+            // 粗体 **text**
+            html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+
+            // 斜体 *text*
+            html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+
+            // 标题
+            html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
+            html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
+            html = html.replace(/^# (.+)$/gm, '<h1>$1</h1>');
+
+            // 无序列表
+            html = html.replace(/^- (.+)$/gm, '<li>$1</li>');
+            html = html.replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>');
+
+            // 换行
+            html = html.replace(/\n/g, '<br>');
+
+            // 链接
+            html = html.replace(
+                /(https?:\/\/[^\s<]+)/g,
+                '<a href="$1" target="_blank" rel="noopener">$1</a>'
+            );
+
+            return html;
+        }
+
+        function editAuthorName(element, role) {
+            if (element.querySelector('input')) return;
+
+            const currentName = role === 'user' ? userName : assistantName;
+            const input = document.createElement('input');
+            input.value = currentName;
+            input.maxLength = 20;
+
+            element.innerHTML = '';
+            element.appendChild(input);
+            input.focus();
+            input.select();
+
+            const save = () => {
+                const newName = input.value.trim() || currentName;
+                if (role === 'user') {
+                    userName = newName;
+                    localStorage.setItem('factarc_user_name', userName);
+                } else {
+                    assistantName = newName;
+                    localStorage.setItem('factarc_assistant_name', assistantName);
+                }
+                element.textContent = newName;
+                refreshAllAuthorNames();
+            };
+
+            input.addEventListener('blur', save);
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+                if (e.key === 'Escape') { element.textContent = currentName; }
+            });
+        }
+
+        function refreshAllAuthorNames() {
+            document.querySelectorAll('.message.user .message-author').forEach(el => {
+                if (!el.querySelector('input')) el.textContent = userName;
+            });
+            document.querySelectorAll('.message.assistant .message-author').forEach(el => {
+                if (!el.querySelector('input')) el.textContent = assistantName;
+            });
+        }
+
+        function renderVerificationTrail(data) {
+            const trail = data.verification_trail;
+            const trailId = 'trail-' + generateId();
+
+            let html = `
+                <div class="verification-trail">
+                    <div class="trail-header" onclick="toggleTrail('${trailId}')">
+                        <span class="trail-arrow">▶</span>
+                        验证轨迹 · ${trail.length} 轮 · ${data.correction_loop_count} 次纠错
+                        <span style="margin-left:auto;font-size:11px;">点击展开</span>
+                    </div>
+                    <div class="trail-details" id="${trailId}">`;
+
+            trail.forEach(round => {
+                const vr = round.verify_response;
+                const badgeClass = vr.consistent ? 'pass' : 'fail';
+                const badgeText = vr.consistent ? '✓ 一致' : '✗ 需纠正';
+
+                html += `
+                    <div class="trail-round">
+                        <div class="trail-round-header">
+                            <span>第 ${round.round} 轮</span>
+                            <span class="trail-badge ${badgeClass}">${badgeText}</span>
+                            <span class="trail-confidence">置信度: ${vr.confidence}%</span>
+                        </div>
+                        <div class="trail-reason">${renderMarkdown(vr.reason)}</div>`;
+
+                if (round.retrieved_facts && round.retrieved_facts.length > 0) {
+                    html += '<div class="trail-facts">';
+                    round.retrieved_facts.slice(0, 3).forEach(fact => {
+                        html += `
+                            <div class="fact-item">
+                                <div class="fact-title">${escapeHtml(fact.title || '无标题')}</div>
+                                <div class="fact-snippet">${escapeHtml((fact.snippet || '').substring(0, 150))}</div>
+                                ${fact.url ? `<a class="fact-url" href="${escapeHtml(fact.url)}" target="_blank">${escapeHtml(fact.url)}</a>` : ''}
+                            </div>`;
+                    });
+                    if (round.retrieved_facts.length > 3) {
+                        html += `<div style="font-size:11px;color:var(--text-tertiary);">还有 ${round.retrieved_facts.length - 3} 条结果...</div>`;
+                    }
+                    html += '</div>';
+                }
+                html += '</div>';
+            });
+
+            html += '</div></div>';
+            return html;
+        }
+
+        function toggleTrail(trailId) {
+            const details = document.getElementById(trailId);
+            const header = details.previousElementSibling;
+            details.classList.toggle('show');
+            header.classList.toggle('expanded');
+            const toggleText = header.querySelector('span:last-child');
+            if (toggleText) toggleText.textContent = details.classList.contains('show') ? '点击收起' : '点击展开';
+        }
+
+        function showTypingIndicator() {
+            const wrapper = document.getElementById('messagesWrapper');
+            const id = 'typing-' + generateId();
+            const div = document.createElement('div');
+            div.className = 'message assistant';
+            div.id = id;
+            div.innerHTML = `
+                <div class="message-author">${escapeHtml(assistantName)}</div>
+                <div class="message-content">
+                    <div class="typing-indicator"><span></span><span></span><span></span></div>
+                </div>`;
+            wrapper.appendChild(div);
+            scrollToBottom();
+            return id;
+        }
+
+        function removeTypingIndicator(id) {
+            const el = document.getElementById(id);
+            if (el) el.remove();
+        }
+
+        function newChat() {
+            currentChatId = generateId();
+            chatHistory[currentChatId] = { title: '新对话', messages: [] };
+            document.getElementById('messagesWrapper').innerHTML = `
+                <div class="welcome-screen" id="welcomeScreen">
+                    <div class="welcome-title">Fact-ARC</div>
+                    <div class="welcome-desc">基于"生成-检索-比对-纠错"闭环架构的智能对话系统。</div>
+                    <div class="welcome-features">
+                        <div class="feature-card" onclick="sendPreset('2024年诺贝尔物理学奖得主是谁？')">
+                            <div class="fc-title">事实核查</div>
+                            <div class="fc-desc">验证最新学术界动态和科学事实</div>
+                        </div>
+                        <div class="feature-card" onclick="sendPreset('特斯拉Model Y 2024款有什么新功能？')">
+                            <div class="fc-title">产品信息</div>
+                            <div class="fc-desc">检索并验证最新产品规格和功能</div>
+                        </div>
+                        <div class="feature-card" onclick="sendPreset('最近有哪些重要的国际新闻？')">
+                            <div class="fc-title">时事新闻</div>
+                            <div class="fc-desc">获取经过验证的实时新闻摘要</div>
+                        </div>
+                    </div>
+                </div>`;
+            renderChatHistory();
+            saveChatHistory();
+            document.getElementById('userInput').focus();
+        }
+
+        function switchChat(chatId) {
+            currentChatId = chatId;
+            const wrapper = document.getElementById('messagesWrapper');
+            wrapper.innerHTML = '';
+            const chat = chatHistory[chatId];
+            if (!chat || !chat.messages || chat.messages.length === 0) {
+                wrapper.innerHTML = `
+                    <div class="welcome-screen" id="welcomeScreen">
+                        <div class="welcome-title">Fact-ARC</div>
+                        <div class="welcome-desc">基于"生成-检索-比对-纠错"闭环架构的智能对话系统。</div>
+                    </div>`;
+            } else {
+                chat.messages.forEach(msg => addMessageFromHistory(msg));
+            }
+            renderChatHistory();
+            scrollToBottom();
+        }
+
+        function addMessageFromHistory(msg) {
+            const wrapper = document.getElementById('messagesWrapper');
+            const welcomeScreen = document.getElementById('welcomeScreen');
+            if (welcomeScreen) welcomeScreen.remove();
+
+            const div = document.createElement('div');
+            div.className = `message ${msg.role}`;
+            const authorName = msg.role === 'user' ? userName : assistantName;
+            const renderedContent = renderMarkdown(msg.content);
+
+            div.innerHTML = `
+                <div class="message-author editable" onclick="editAuthorName(this, '${msg.role}')" title="点击修改名称">
+                    ${escapeHtml(authorName)}
+                </div>
+                <div class="message-content">${renderedContent}</div>
+                ${(msg.role === 'assistant' && msg.apiData && msg.apiData.verification_trail) ? renderVerificationTrail(msg.apiData) : ''}`;
+
+            wrapper.appendChild(div);
+        }
+
+        function updateChatHistory(lastUserMessage) {
+            if (!chatHistory[currentChatId]) {
+                chatHistory[currentChatId] = { title: lastUserMessage.substring(0, 40), messages: [] };
+            }
+            if (!chatHistory[currentChatId].title || chatHistory[currentChatId].title === '新对话') {
+                chatHistory[currentChatId].title = lastUserMessage.substring(0, 40) + (lastUserMessage.length > 40 ? '...' : '');
+            }
+            renderChatHistory();
+            saveChatHistory();
+        }
+
+        function renderChatHistory() {
+            const container = document.getElementById('chatHistory');
+            let html = '';
+            const sorted = Object.entries(chatHistory)
+                .sort((a, b) => {
+                    const ta = a[1].messages?.[a[1].messages.length - 1]?.timestamp || 0;
+                    const tb = b[1].messages?.[b[1].messages.length - 1]?.timestamp || 0;
+                    return tb - ta;
+                });
+
+            sorted.forEach(([id, chat]) => {
+                if (!chat.messages || chat.messages.length === 0) return;
+                html += `<div class="history-item ${id === currentChatId ? 'active' : ''}" onclick="switchChat('${id}')">${escapeHtml(chat.title || '新对话')}</div>`;
+            });
+            container.innerHTML = html;
+        }
+
+        function saveChatHistory() {
+            try {
+                const cleaned = {};
+                Object.entries(chatHistory).forEach(([id, chat]) => {
+                    if (chat.messages && chat.messages.length > 0) cleaned[id] = chat;
+                });
+                chatHistory = cleaned;
+                localStorage.setItem('factarc_chat_history', JSON.stringify(chatHistory));
+                localStorage.setItem('factarc_current_chat', currentChatId);
+            } catch (e) { console.warn('Save failed:', e); }
+        }
+
+        function loadChatHistory() {
+            try {
+                const saved = localStorage.getItem('factarc_chat_history');
+                if (saved) chatHistory = JSON.parse(saved);
+                const savedId = localStorage.getItem('factarc_current_chat');
+                if (savedId && chatHistory[savedId]) {
+                    currentChatId = savedId;
+                    switchChat(currentChatId);
+                }
+                renderChatHistory();
+            } catch (e) { console.warn('Load failed:', e); }
+        }
+
+        function handleKeyDown(event) {
+            if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                sendMessage();
+            }
+        }
+
+        function autoResize(textarea) {
+            textarea.style.height = 'auto';
+            textarea.style.height = Math.min(textarea.scrollHeight, 200) + 'px';
+            document.getElementById('sendBtn').disabled = !textarea.value.trim() || isProcessing;
+        }
+
+        function setProcessingState(processing) {
+            isProcessing = processing;
+            const sendBtn = document.getElementById('sendBtn');
+            const inputEl = document.getElementById('userInput');
+            sendBtn.disabled = processing || !inputEl.value.trim();
+            inputEl.disabled = processing;
+            if (!processing) inputEl.focus();
+        }
+
+        function scrollToBottom() {
+            const container = document.getElementById('chatContainer');
+            requestAnimationFrame(() => { container.scrollTop = container.scrollHeight; });
+        }
+
+        function toggleSidebar() {
+            document.getElementById('sidebar').classList.toggle('open');
+        }
+
+        function showToast(message, type = '') {
+            const container = document.getElementById('toastContainer');
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.textContent = message;
+            container.appendChild(toast);
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                toast.style.transition = 'opacity 0.3s';
+                setTimeout(() => toast.remove(), 300);
+            }, 4000);
+        }
+
+        function generateId() {
+            return 'id_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9);
+        }
+
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        document.addEventListener('keydown', (e) => {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+                e.preventDefault();
+                document.getElementById('userInput').focus();
+            }
+            if ((e.ctrlKey || e.metaKey) && e.key === 'n') {
+                e.preventDefault();
+                newChat();
+            }
+        });
+
+        setInterval(checkAPIHealth, 30000);
+    </script>
+</body>
+</html>
